@@ -1,0 +1,169 @@
+AWSTemplateFormatVersion: "2010-09-09"
+#
+Resources:
+  SourceBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: group56datalake44shoja
+
+  DestinationBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: group56datawarehouse34rels
+
+  IngestionGlueJob:
+    Type: AWS::Glue::Job
+    DependsOn:
+      - SourceBucket
+      - DestinationBucket
+    Properties:
+      Name: injection12re
+      Role: arn:aws:iam::118745602372:role/LabRole
+      GlueVersion: '2.0'  # Glue version should be set to 2.0 for AWS Glue 2.0
+      Timeout: 230
+      WorkerType: G.1X
+      NumberOfWorkers: 12
+      Command:
+        Name: glueetl
+        ScriptLocation: s3://injectw11/injesion.py
+      DefaultArguments:
+        "--job-language": "python"
+      ExecutionProperty:
+        MaxConcurrentRuns: 1
+
+  TransformationGlueJob:
+    Type: AWS::Glue::Job
+    Properties:
+      Name: crime-transformationlast1
+      Role: arn:aws:iam::118745602372:role/LabRole
+      GlueVersion: 4.0
+      NumberOfWorkers: 12
+      Timeout: 30
+      WorkerType: G.1X
+      Command:
+        Name: glueetl
+        ScriptLocation: s3://injectw11/transform.py
+      DefaultArguments:
+        "--job-language": "python"
+      ExecutionProperty:
+        MaxConcurrentRuns: 1
+
+  GlueWorkflow:
+    Type: AWS::Glue::Workflow
+    Properties:
+      Description: ETL Job
+      MaxConcurrentRuns: 1
+      Name: crime-workflowlast1
+
+  GlueTriggerImport:
+    Type: AWS::Glue::Trigger
+    DependsOn:
+      - GlueWorkflow
+      - IngestionGlueJob
+    Properties:
+      Actions:
+        - JobName: !Ref IngestionGlueJob
+      Description: Triggers the Import Jobs
+      Name: gluetriggerimportlast1
+      Type: EVENT
+      WorkflowName: crime-workflowlast1
+
+  GlueTriggerTransform:
+    Type: AWS::Glue::Trigger
+    DependsOn:
+      - GlueWorkflow
+      - TransformationGlueJob
+      - GlueTriggerImport
+    Properties:
+      Actions:
+        - JobName: !Ref TransformationGlueJob
+      Description: Triggers the transformation job
+      Name: gluetriggertransformlast1
+      Predicate:
+        Conditions:
+          - JobName: !Ref IngestionGlueJob
+            LogicalOperator: EQUALS
+            State: SUCCEEDED
+        Logical: AND
+      Type: CONDITIONAL
+      StartOnCreation: True
+      WorkflowName: crime-workflowlast1
+
+  GlueDatabase:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: crimelast1
+
+  DataCrawler1:
+    Type: AWS::Glue::Crawler
+    DependsOn:
+      - SourceBucket
+      - DestinationBucket
+      - GlueDatabase
+      - GlueWorkflow
+      - GlueTriggerTransform
+    Properties:
+      Name: data-crawlerlast1
+      DatabaseName: crimelast1 # Replace with your desired Glue database name
+      Targets:
+        S3Targets:
+          - Path: s3://group56datawarehouse34rels/OUTCOMES/ # Specify the path of the bucket you want to crawl
+      Role: arn:aws:iam::118745602372:role/LabRole
+
+  DataCrawler2:
+    Type: AWS::Glue::Crawler
+    DependsOn:
+      - SourceBucket
+      - DestinationBucket
+      - GlueDatabase
+      - GlueWorkflow
+      - GlueTriggerTransform
+    Properties:
+      Name: data-crawlerlast2
+      DatabaseName: crimelast1 # Replace with your desired Glue database name
+      Targets:
+        S3Targets:
+          - Path: s3://group56datawarehouse34rels/STREET/ # Specify the path of the bucket you want to crawl
+      Role: arn:aws:iam::118745602372:role/LabRole
+
+  GlueTriggerForCrawler1:
+    Type: AWS::Glue::Trigger
+    DependsOn:
+      - GlueTriggerTransform
+    Properties:
+      Name: GlueTriggerForCrawlerlast1
+      Type: CONDITIONAL
+      Actions:
+        - CrawlerName: !Ref DataCrawler1
+          NotificationProperty:
+            NotifyDelayAfter: 1
+      Predicate:
+        Conditions:
+          - JobName: !Ref TransformationGlueJob
+            LogicalOperator: EQUALS
+            State: SUCCEEDED
+        Logical: AND
+      StartOnCreation: True
+      WorkflowName: crime-workflowlast1
+
+  GlueTriggerForCrawler2:
+    Type: AWS::Glue::Trigger
+    DependsOn:
+      - GlueTriggerTransform
+    Properties:
+      Name: GlueTriggerForCrawlerlast123
+      Type: CONDITIONAL
+      Actions:
+        - CrawlerName: !Ref DataCrawler2
+          NotificationProperty:
+            NotifyDelayAfter: 1
+      Predicate:
+        Conditions:
+          - JobName: !Ref TransformationGlueJob
+            LogicalOperator: EQUALS
+            State: SUCCEEDED
+        Logical: AND
+      StartOnCreation: True
+      WorkflowName: crime-workflowlast1
